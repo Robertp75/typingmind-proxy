@@ -3,7 +3,9 @@ import fetch from "node-fetch";
 
 const app = express();
 
+// ======================================
 // Generic proxy: streamable-http → SSE
+// ======================================
 async function streamAsSSE(upstreamUrl, headers, req, res) {
   try {
     const upstream = await fetch(upstreamUrl, {
@@ -262,7 +264,9 @@ const MCP_MAP = {
 
 app.use(express.json({ limit: "2mb" }));
 
-// Create endpoint for each MCP
+// ======================================
+// Dynamic POST proxy endpoints
+// ======================================
 Object.entries(MCP_MAP).forEach(([name, cfg]) => {
   app.post(`/mcp/${name}/sse`, async (req, res) => {
     console.log(`➡ Proxying request to ${name} MCP`);
@@ -270,36 +274,28 @@ Object.entries(MCP_MAP).forEach(([name, cfg]) => {
   });
 });
 
-// ✅ FIX: listen on Elestio's PORT (or 3050 locally)
-//const PORT = process.env.PORT || 3050;
-//app.listen(PORT, () => {
-  //console.log(`✅ MCP SSE adapter listening on port ${PORT}`);
-  //Object.keys(MCP_MAP).forEach((name) => {
-    //console.log(`   /mcp/${name}/sse → ${MCP_MAP[name].url}`);
-  //});
-//});
-//--- 
-//const PORT = process.env.PORT || 3000;
-//app.listen(PORT, () => {
-  //console.log(`Server running on port ${PORT}`);
-//});
+// ======================================
+// Health + Ping Endpoints
+// ======================================
 
-app.use(express.json({ limit: "2mb" }));
-
-// Create endpoint for each MCP in the map
-Object.entries(MCP_MAP).forEach(([name, cfg]) => {
-  app.post(`/mcp/${name}/sse`, async (req, res) => {
-    console.log(`➡ Proxying request to ${name} MCP`);
-    await streamAsSSE(cfg.url, cfg.headers, req, res);
-  });
-});
-
-// Root health check (prevents "Cannot GET /")
+// Root route
 app.get("/", (req, res) => {
-  res.send("✅ Elestio MCP proxy is running on port " + PORT);
+  res.send("✅ Elestio MCP proxy server is running");
 });
 
-// ✅ Use Elestio's injected PORT or fallback to 3000 locally
+// Connector ping (needed by TypingMind/Nionium Test Connection)
+app.get("/mcp/:name/sse/ping", (req, res) => {
+  const { name } = req.params;
+  if (MCP_MAP[name]) {
+    res.status(200).send(`✅ MCP connector for '${name}' is alive`);
+  } else {
+    res.status(404).send(`❌ No MCP config found for '${name}'`);
+  }
+});
+
+// ======================================
+// Start Server
+// ======================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`✅ MCP SSE adapter listening on port ${PORT}`);
@@ -307,4 +303,3 @@ app.listen(PORT, () => {
     console.log(`   /mcp/${name}/sse → ${MCP_MAP[name].url}`);
   });
 });
-
