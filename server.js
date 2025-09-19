@@ -279,7 +279,32 @@ Object.entries(MCP_MAP).forEach(([name, cfg]) => {
   //});
 //});
 //--- 
+//const PORT = process.env.PORT || 3000;
+//app.listen(PORT, () => {
+  //console.log(`Server running on port ${PORT}`);
+//});
+
+app.use(express.json({ limit: "2mb" }));
+
+// Create endpoint for each MCP in the map
+Object.entries(MCP_MAP).forEach(([name, cfg]) => {
+  app.post(`/mcp/${name}/sse`, async (req, res) => {
+    console.log(`➡ Proxying request to ${name} MCP`);
+    await streamAsSSE(cfg.url, cfg.headers, req, res);
+  });
+});
+
+// Root health check (prevents "Cannot GET /")
+app.get("/", (req, res) => {
+  res.send("✅ Elestio MCP proxy is running on port " + PORT);
+});
+
+// ✅ Use Elestio's injected PORT or fallback to 3000 locally
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`✅ MCP SSE adapter listening on port ${PORT}`);
+  Object.keys(MCP_MAP).forEach((name) => {
+    console.log(`   /mcp/${name}/sse → ${MCP_MAP[name].url}`);
+  });
 });
+
