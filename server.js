@@ -3,9 +3,9 @@ import fetch from "node-fetch";
 
 const app = express();
 
-// ======================================
-// Generic proxy: streamable-http → SSE
-// ======================================
+// ==================================================
+// Generic proxy: HTTP → SSE streamer
+// ==================================================
 async function streamAsSSE(upstreamUrl, headers, req, res) {
   try {
     const upstream = await fetch(upstreamUrl, {
@@ -26,12 +26,15 @@ async function streamAsSSE(upstreamUrl, headers, req, res) {
     }
   } catch (err) {
     console.error("❌ Upstream stream error:", err);
-    res.status(500).end("Proxy error");
+    res.status(500).json({ status: "error", message: "Proxy error" });
   }
   res.end();
 }
 
-// MCP mappings (all Tavily-style formatting)
+// ==================================================
+// MCP Server Mappings
+// ⚡ Keep ALL of your integrations here
+// ==================================================
 const MCP_MAP = {
   // Tavily
   tavily: {
@@ -264,41 +267,49 @@ const MCP_MAP = {
 
 app.use(express.json({ limit: "2mb" }));
 
-// ======================================
+// ==================================================
 // Dynamic POST proxy endpoints
-// ======================================
+// ==================================================
 Object.entries(MCP_MAP).forEach(([name, cfg]) => {
   app.post(`/mcp/${name}/sse`, async (req, res) => {
-    console.log(`➡ Proxying request to ${name} MCP`);
+    console.log(`➡ Proxying request to ${name}`);
     await streamAsSSE(cfg.url, cfg.headers, req, res);
   });
 });
 
-// ======================================
-// Health + Ping Endpoints
-// ======================================
+// ==================================================
+// Health + Root + JSON Ping
+// ==================================================
 
-// Root route
+// Root health check
 app.get("/", (req, res) => {
-  res.send("✅ Elestio MCP proxy server is running");
+  res.json({ status: "ok", message: "✅ Elestio MCP proxy server is running" });
 });
 
-// Connector ping (needed by TypingMind/Nionium Test Connection)
+// JSON-based connector ping (for TypingMind/Nionium plugin test)
 app.get("/mcp/:name/sse/ping", (req, res) => {
   const { name } = req.params;
   if (MCP_MAP[name]) {
-    res.status(200).send(`✅ MCP connector for '${name}' is alive`);
+    res.json({
+      status: "ok",
+      service: name,
+      message: `MCP connector for '${name}' is alive`,
+    });
   } else {
-    res.status(404).send(`❌ No MCP config found for '${name}'`);
+    res.status(404).json({
+      status: "error",
+      service: name,
+      message: `No MCP config found for '${name}'`,
+    });
   }
 });
 
-// ======================================
-// Start Server
-// ======================================
+// ==================================================
+// Start server
+// ==================================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`✅ MCP SSE adapter listening on port ${PORT}`);
+  console.log(`✅ MCP Proxy server listening on port ${PORT}`);
   Object.keys(MCP_MAP).forEach((name) => {
     console.log(`   /mcp/${name}/sse → ${MCP_MAP[name].url}`);
   });
