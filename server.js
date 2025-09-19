@@ -271,7 +271,16 @@ Object.entries(MCP_MAP).forEach(([name, cfg]) => {
 });
 
 // ✅ FIX: listen on Elestio's PORT (or 3050 locally)
-const PORT = process.env.PORT || 3050;
+//const PORT = process.env.PORT || 3050;
+//app.listen(PORT, () => {
+  //console.log(`✅ MCP SSE adapter listening on port ${PORT}`);
+  //Object.keys(MCP_MAP).forEach((name) => {
+    //console.log(`   /mcp/${name}/sse → ${MCP_MAP[name].url}`);
+  //});
+//});
+
+// ✅ FIX: listen on Elestio's PORT (or 3050 locally)
+const PORT = process.env.PORT || 3050;   // fallback to 3050 locally
 app.listen(PORT, () => {
   console.log(`✅ MCP SSE adapter listening on port ${PORT}`);
   Object.keys(MCP_MAP).forEach((name) => {
