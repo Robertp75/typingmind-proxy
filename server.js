@@ -5,25 +5,26 @@ const app = express();
 
 // Generic proxy: streamable-http → SSE
 async function streamAsSSE(upstreamUrl, headers, req, res) {
-  const upstream = await fetch(upstreamUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...headers,
-    },
-    body: JSON.stringify(req.body),
-  });
-
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection", "keep-alive");
-
   try {
+    const upstream = await fetch(upstreamUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...headers,
+      },
+      body: JSON.stringify(req.body),
+    });
+
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+
     for await (const chunk of upstream.body) {
       res.write(`data: ${chunk.toString()}\n\n`);
     }
   } catch (err) {
     console.error("❌ Upstream stream error:", err);
+    res.status(500).end("Proxy error");
   }
   res.end();
 }
@@ -269,8 +270,10 @@ Object.entries(MCP_MAP).forEach(([name, cfg]) => {
   });
 });
 
-app.listen(3050, () => {
-  console.log("✅ MCP SSE adapter listening on port 3050");
+// ✅ FIX: listen on Elestio's PORT (or 3050 locally)
+const PORT = process.env.PORT || 3050;
+app.listen(PORT, () => {
+  console.log(`✅ MCP SSE adapter listening on port ${PORT}`);
   Object.keys(MCP_MAP).forEach((name) => {
     console.log(`   /mcp/${name}/sse → ${MCP_MAP[name].url}`);
   });
