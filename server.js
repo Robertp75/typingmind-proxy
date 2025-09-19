@@ -278,7 +278,7 @@ Object.entries(MCP_MAP).forEach(([name, cfg]) => {
     //console.log(`   /mcp/${name}/sse → ${MCP_MAP[name].url}`);
   //});
 //});
-
+//--- 
 // ✅ FIX: listen on Elestio's PORT (or 3050 locally)
 const PORT = process.env.PORT || 3050;
 app.listen(PORT, () => {
