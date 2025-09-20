@@ -1,40 +1,43 @@
+/**************************************************************************
+  TypingMind ⇆ Elestio proxy
+  • Converts TypingMind JSON → the exact JSON-RPC payload each MCP expects
+  • Streams upstream SSE back to TypingMind
+***************************************************************************/
+
 import express from "express";
-import fetch from "node-fetch";
+import fetch   from "node-fetch";
 
 const app = express();
 
-/*─────────────────────────────────────────────
-  Generic proxy – POST JSON ➞ stream SSE
-─────────────────────────────────────────────*/
-async function streamAsSSE(upstreamUrl, extraHeaders, req, res) {
-  try {
-    const upstream = await fetch(upstreamUrl, {
-      method: "POST",
-      headers: {
-        // ‼️ forward Accept header – some MCPs (e.g. weather) require it
-        Accept: req.headers.accept || "application/json, text/event-stream",
-        "Content-Type": "application/json",
-        ...extraHeaders
-      },
-      body: JSON.stringify(req.body)
+/*-----------------------------------------------------------------------
+  1.  Helper that performs an optional “initialize” handshake, then
+      streams the real request.
+----------------------------------------------------------------------*/
+async function initAndStream({ url, headers, initBody }, userBody, res) {
+  if (initBody) {
+    await fetch(url, {
+      method : "POST",
+      headers,
+      body   : JSON.stringify(initBody)
     });
+  }
+  const upstream = await fetch(url, {
+    method  : "POST",
+    headers,
+    body    : JSON.stringify(userBody)
+  });
 
-    // forward SSE back to TypingMind
-    res.setHeader("Content-Type", "text/event-stream");
-    res.setHeader("Cache-Control", "no-cache");
-    res.setHeader("Connection", "keep-alive");
+  // pipe upstream SSE back to TypingMind
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
 
-    for await (const chunk of upstream.body) {
-      res.write(`data: ${chunk.toString()}\n\n`);
-    }
-  } catch (err) {
-    console.error("❌ Upstream stream error:", err);
-    res
-      .status(500)
-      .json({ status: "error", message: "Proxy error", detail: err.message });
+  for await (const chunk of upstream.body) {
+    res.write(`data: ${chunk.toString()}\n\n`);
   }
   res.end();
 }
+
 
 // ==================================================
 // MCP Server Mappings
@@ -286,43 +289,64 @@ const MCP_MAP = {
   },
 };
 
-/*─────────────────────────────────────────────
-  Dynamic POST endpoints
-─────────────────────────────────────────────*/
+/*-----------------------------------------------------------------------
+  3.  Parse JSON bodies up to 2 MB
+----------------------------------------------------------------------*/
 app.use(express.json({ limit: "2mb" }));
 
+/*-----------------------------------------------------------------------
+  4.  Dynamic endpoint for each MCP
+----------------------------------------------------------------------*/
 Object.entries(MCP_MAP).forEach(([name, cfg]) => {
-  app.post(`/mcp/${name}/sse`, (req, res) =>
-    streamAsSSE(cfg.url, cfg.headers, req, res)
-  );
+  app.post(`/mcp/${name}/sse`, async (req, res) => {
+    try {
+      await initAndStream(
+        {
+          url     : cfg.url,
+          headers : {
+            Accept        : req.headers.accept || "application/json,text/event-stream",
+            "Content-Type": "application/json",
+            ...cfg.headers
+          },
+          initBody: cfg.initBody
+        },
+        req.body,
+        res
+      );
+    } catch (err) {
+      console.error(`❌ Upstream error (${name}):`, err);
+      res.status(500).json({ status: "error", message: err.message });
+    }
+  });
 });
 
-/*─────────────────────────────────────────────
-  Health + ping
-─────────────────────────────────────────────*/
+/*-----------------------------------------------------------------------
+  5.  Health + ping
+----------------------------------------------------------------------*/
 app.get("/", (_req, res) =>
   res.json({ status: "ok", message: "✅ Elestio MCP proxy running" })
 );
 
 app.get("/mcp/:name/sse/ping", (req, res) => {
   const { name } = req.params;
-  if (MCP_MAP[name])
+  if (MCP_MAP[name]) {
     res.json({
-      status: "ok",
-      service: name,
-      message: `MCP connector for '${name}' is alive`
+      status  : "ok",
+      service : name,
+      message : `MCP connector for '${name}' is alive`
     });
-  else
+  } else {
     res.status(404).json({
-      status: "error",
-      service: name,
-      message: `No MCP config found for '${name}'`
+      status  : "error",
+      service : name,
+      message : `No MCP config found for '${name}'`
     });
+  }
 });
 
-/*─────────────────────────────────────────────
-  Start server
-─────────────────────────────────────────────*/
+/*-----------------------------------------------------------------------
+  6.  Start
+----------------------------------------------------------------------*/
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`✅ MCP proxy listening on ${PORT}`);
@@ -330,4 +354,3 @@ app.listen(PORT, () => {
     console.log(`   /mcp/${n}/sse  →  ${MCP_MAP[n].url}`)
   );
 });
-
