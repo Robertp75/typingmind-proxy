@@ -329,7 +329,10 @@ Object.entries(MCP_MAP).forEach(([name, cfg]) => {
         {
           url     : cfg.url,
           headers : {
-            Accept        : req.headers.accept || "application/json,text/event-stream",
+            /*Accept        : req.headers.accept || "application/json,text/event-stream",
+            "Content-Type": "application/json",
+            ...cfg.headers*/
+            Accept        : "application/json, text/event-stream", // <-- THE FIX
             "Content-Type": "application/json",
             ...cfg.headers
           },
