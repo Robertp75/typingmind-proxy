@@ -14,29 +14,46 @@ const app = express();
       streams the real request.
 ----------------------------------------------------------------------*/
 async function initAndStream({ url, headers, initBody }, userBody, res) {
-  if (initBody) {
-    await fetch(url, {
-      method : "POST",
-      headers,
-      body   : JSON.stringify(initBody)
+    const upstreamHeaders = { ...headers }; // Create a mutable copy of headers
+
+    if (initBody) {
+      const initResponse = await fetch(url, {
+        method : "POST",
+        headers, // Use original headers for the init call
+        body   : JSON.stringify(initBody)
+      });
+
+      // Capture the session cookie from the init response
+      const cookie = initResponse.headers.get('set-cookie');
+      if (cookie) {
+        // Add the cookie to the headers for the main request
+        upstreamHeaders['Cookie'] = cookie;
+      }
+
+      // Optional: You could also add a check here to see if the init was successful
+      if (!initResponse.ok) {
+         console.error(`❌ MCP Init failed with status: ${initResponse.status}`);
+         // You might want to handle this error more gracefully
+      }
+    }
+
+    const upstream = await fetch(url, {
+      method  : "POST",
+      headers : upstreamHeaders, // Use the (potentially updated) headers
+      body    : JSON.stringify(userBody)
     });
-  }
-  const upstream = await fetch(url, {
-    method  : "POST",
-    headers,
-    body    : JSON.stringify(userBody)
-  });
 
-  // pipe upstream SSE back to TypingMind
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection", "keep-alive");
+    // pipe upstream SSE back to TypingMind
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
 
-  for await (const chunk of upstream.body) {
-    res.write(`data: ${chunk.toString()}\n\n`);
+    for await (const chunk of upstream.body) {
+      res.write(`data: ${chunk.toString()}\n\n`);
+    }
+    res.end();
   }
-  res.end();
-}
+
 
 
 // ==================================================
