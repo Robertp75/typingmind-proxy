@@ -155,7 +155,6 @@ const MCP_MAP = {
   weather: {
     url: "https://server.smithery.ai/@HarunGuclu/weather_mcp/mcp?api_key=88153303-caf2-4201-97d2-a9cf08726912&profile=influential-bobcat-ccad4r",
     headers: { Authorization: "Bearer " + process.env.SMITHERY_API_TOKEN },
-    initBody: { jsonrpc: "2.0", id: "init-1", method: "weather.init" },
   },
 
   // Financial Modeling
