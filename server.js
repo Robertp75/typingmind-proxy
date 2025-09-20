@@ -3,20 +3,23 @@ import fetch from "node-fetch";
 
 const app = express();
 
-// ==================================================
-// Generic proxy: HTTP → SSE streamer
-// ==================================================
-async function streamAsSSE(upstreamUrl, headers, req, res) {
+/*─────────────────────────────────────────────
+  Generic proxy – POST JSON ➞ stream SSE
+─────────────────────────────────────────────*/
+async function streamAsSSE(upstreamUrl, extraHeaders, req, res) {
   try {
     const upstream = await fetch(upstreamUrl, {
       method: "POST",
       headers: {
+        // ‼️ forward Accept header – some MCPs (e.g. weather) require it
+        Accept: req.headers.accept || "application/json, text/event-stream",
         "Content-Type": "application/json",
-        ...headers,
+        ...extraHeaders
       },
-      body: JSON.stringify(req.body),
+      body: JSON.stringify(req.body)
     });
 
+    // forward SSE back to TypingMind
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
@@ -26,7 +29,9 @@ async function streamAsSSE(upstreamUrl, headers, req, res) {
     }
   } catch (err) {
     console.error("❌ Upstream stream error:", err);
-    res.status(500).json({ status: "error", message: "Proxy error" });
+    res
+      .status(500)
+      .json({ status: "error", message: "Proxy error", detail: err.message });
   }
   res.end();
 }
@@ -35,6 +40,22 @@ async function streamAsSSE(upstreamUrl, headers, req, res) {
 // MCP Server Mappings
 // ⚡ Keep ALL of your integrations here
 // ==================================================
+// https://typingmind-proxy-vm-u6629.vm.elestio.app/mcp/exa/sse
+// This is a typing mind mcp adapter tool for connecting to http-streamable mcp's.
+// In this special example it is the connection to a http-streamable mcp for Exa.
+// {
+//  "mcpServers": {
+//    "exa": {
+//      "url": "https://typingmind-proxy-vm-u6629.vm.elestio.app/mcp/exa/sse"
+//    }
+//  }
+//}
+/*─────────────────────────────────────────────
+  MCP server mappings  (add / edit here)
+─────────────────────────────────────────────*/
+const COMPOSIO = `Bearer ${process.env.COMPOSIO_API_KEY}`;
+const SMITHERY = `Bearer ${process.env.SMITHERY_API_TOKEN}`;
+
 const MCP_MAP = {
   // Tavily
   tavily: {
@@ -265,52 +286,48 @@ const MCP_MAP = {
   },
 };
 
+/*─────────────────────────────────────────────
+  Dynamic POST endpoints
+─────────────────────────────────────────────*/
 app.use(express.json({ limit: "2mb" }));
 
-// ==================================================
-// Dynamic POST proxy endpoints
-// ==================================================
 Object.entries(MCP_MAP).forEach(([name, cfg]) => {
-  app.post(`/mcp/${name}/sse`, async (req, res) => {
-    console.log(`➡ Proxying request to ${name}`);
-    await streamAsSSE(cfg.url, cfg.headers, req, res);
-  });
+  app.post(`/mcp/${name}/sse`, (req, res) =>
+    streamAsSSE(cfg.url, cfg.headers, req, res)
+  );
 });
 
-// ==================================================
-// Health + Root + JSON Ping
-// ==================================================
+/*─────────────────────────────────────────────
+  Health + ping
+─────────────────────────────────────────────*/
+app.get("/", (_req, res) =>
+  res.json({ status: "ok", message: "✅ Elestio MCP proxy running" })
+);
 
-// Root health check
-app.get("/", (req, res) => {
-  res.json({ status: "ok", message: "✅ Elestio MCP proxy server is running" });
-});
-
-// JSON-based connector ping (for TypingMind/Nionium plugin test)
 app.get("/mcp/:name/sse/ping", (req, res) => {
   const { name } = req.params;
-  if (MCP_MAP[name]) {
+  if (MCP_MAP[name])
     res.json({
       status: "ok",
       service: name,
-      message: `MCP connector for '${name}' is alive`,
+      message: `MCP connector for '${name}' is alive`
     });
-  } else {
+  else
     res.status(404).json({
       status: "error",
       service: name,
-      message: `No MCP config found for '${name}'`,
+      message: `No MCP config found for '${name}'`
     });
-  }
 });
 
-// ==================================================
-// Start server
-// ==================================================
+/*─────────────────────────────────────────────
+  Start server
+─────────────────────────────────────────────*/
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`✅ MCP Proxy server listening on port ${PORT}`);
-  Object.keys(MCP_MAP).forEach((name) => {
-    console.log(`   /mcp/${name}/sse → ${MCP_MAP[name].url}`);
-  });
+  console.log(`✅ MCP proxy listening on ${PORT}`);
+  Object.keys(MCP_MAP).forEach((n) =>
+    console.log(`   /mcp/${n}/sse  →  ${MCP_MAP[n].url}`)
+  );
 });
+
