@@ -14,46 +14,54 @@ const app = express();
       streams the real request.
 ----------------------------------------------------------------------*/
 async function initAndStream({ url, headers, initBody }, userBody, res) {
-    const upstreamHeaders = { ...headers }; // Create a mutable copy of headers
-
+    const upstreamHeaders = { ...headers };
+  
     if (initBody) {
+      console.log("▶️  Starting MCP initialization...");
+      console.log("   SENDING HEADERS TO INIT:", JSON.stringify(headers, null, 2));
+  
       const initResponse = await fetch(url, {
-        method : "POST",
-        headers, // Use original headers for the init call
-        body   : JSON.stringify(initBody)
+        method: "POST",
+        headers,
+        body: JSON.stringify(initBody),
       });
-
-      // Capture the session cookie from the init response
+  
+      console.log(`   INIT RESPONSE STATUS: ${initResponse.status}`);
+  
       const cookie = initResponse.headers.get('set-cookie');
       if (cookie) {
-        // Add the cookie to the headers for the main request
+        console.log(`   ✅ COOKIE RECEIVED: ${cookie}`);
         upstreamHeaders['Cookie'] = cookie;
+      } else {
+        console.log("   ⚠️  WARNING: NO COOKIE RECEIVED FROM INIT CALL.");
       }
-
-      // Optional: You could also add a check here to see if the init was successful
+  
       if (!initResponse.ok) {
-         console.error(`❌ MCP Init failed with status: ${initResponse.status}`);
-         // You might want to handle this error more gracefully
+        console.error(`❌ MCP Init failed with status: ${initResponse.status}`);
+        const errorBody = await initResponse.text();
+        console.error("   INIT ERROR BODY:", errorBody);
       }
     }
-
+  
+    console.log("▶️  Making main MCP request...");
+    console.log("   SENDING FINAL HEADERS:", JSON.stringify(upstreamHeaders, null, 2));
+  
     const upstream = await fetch(url, {
-      method  : "POST",
-      headers : upstreamHeaders, // Use the (potentially updated) headers
-      body    : JSON.stringify(userBody)
+      method: "POST",
+      headers: upstreamHeaders,
+      body: JSON.stringify(userBody),
     });
-
-    // pipe upstream SSE back to TypingMind
+  
+    // Pipe upstream SSE back to TypingMind
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
-
+  
     for await (const chunk of upstream.body) {
       res.write(`data: ${chunk.toString()}\n\n`);
     }
     res.end();
   }
-
 
 
 // ==================================================
